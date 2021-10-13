@@ -4,7 +4,7 @@
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
-    setFixedSize(1354, 724);
+    setFixedSize(1354, 970);
 
     init();
 
@@ -39,6 +39,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->txtVelocityLimit2, SIGNAL(editingFinished()), this, SLOT(txtVelLimitEditingFinished()));
     connect(ui->txtPositionLimit2, SIGNAL(editingFinished()), this, SLOT(txtPosLimitEditingFinished()));
     connect(ui->txtForceLimit2, SIGNAL(editingFinished()), this, SLOT(txtForceLimitEditingFinished()));
+
+    connect(ui->btnOrg, SIGNAL(clicked()), this, SLOT(btnOrgClicked()));
+    connect(ui->btnTransmit3, SIGNAL(clicked()), this, SLOT(btnRepeatOperatingClicked()));
+    connect(ui->btnDIOSet, SIGNAL(clicked()), this, SLOT(btnDIOSetClicked()));
 
     ui->comboCommSpeed->setEnabled(false);
     ui->txtCommSpeed->setEnabled(false);
@@ -357,6 +361,76 @@ void *MainWindow::logging_func(void *arg)
     return NULL;
 }
 
+void *MainWindow::repeat_func(void *arg)
+{
+    MainWindow *pThis = static_cast<MainWindow*>(arg);
+
+    bool flag = true;
+
+    for(int i = 0; i < pThis->repeat_count*2; i++)
+    {
+        pThis->data_field.clear();
+        pThis->data_field.push_back(CMD_MOVE);
+        pThis->data_field.push_back(12);
+
+        uint8_t pos1[2], pos2[2], vel1[2], vel2[2], force1[2], force2[2];
+
+        if(flag){
+            pos1[0] = (uint8_t)(pThis->repeat_position1 >> 8);
+            pos1[1] = (uint8_t)pThis->repeat_position1;
+            vel1[0] = (uint8_t)(pThis->cmd_vel1 >> 8);
+            vel1[1] = (uint8_t)pThis->cmd_vel1;
+            force1[0] = (uint8_t)(pThis->cmd_force1 >> 8);
+            force1[1] = (uint8_t)pThis->cmd_force1;
+
+            pos2[0] = (uint8_t)(pThis->cmd_pos2 >> 8);
+            pos2[1] = (uint8_t)pThis->cmd_pos2;
+            vel2[0] = (uint8_t)(pThis->cmd_vel2 >> 8);
+            vel2[1] = (uint8_t)pThis->cmd_vel2;
+            force2[0] = (uint8_t)(pThis->cmd_force2 >> 8);
+            force2[1] = (uint8_t)pThis->cmd_force2;
+        }
+        else{
+            pos1[0] = (uint8_t)(pThis->repeat_position2 >> 8);
+            pos1[1] = (uint8_t)pThis->repeat_position2;
+            vel1[0] = (uint8_t)(pThis->cmd_vel1 >> 8);
+            vel1[1] = (uint8_t)pThis->cmd_vel1;
+            force1[0] = (uint8_t)(pThis->cmd_force1 >> 8);
+            force1[1] = (uint8_t)pThis->cmd_force1;
+
+            pos2[0] = (uint8_t)(pThis->cmd_pos2 >> 8);
+            pos2[1] = (uint8_t)pThis->cmd_pos2;
+            vel2[0] = (uint8_t)(pThis->cmd_vel2 >> 8);
+            vel2[1] = (uint8_t)pThis->cmd_vel2;
+            force2[0] = (uint8_t)(pThis->cmd_force2 >> 8);
+            force2[1] = (uint8_t)pThis->cmd_force2;
+        }
+
+        pThis->data_field.push_back(pos1[0]);
+        pThis->data_field.push_back(pos1[1]);
+        pThis->data_field.push_back(vel1[0]);
+        pThis->data_field.push_back(vel1[1]);
+        pThis->data_field.push_back(force1[0]);
+        pThis->data_field.push_back(force1[1]);
+
+        pThis->data_field.push_back(pos2[0]);
+        pThis->data_field.push_back(pos2[1]);
+        pThis->data_field.push_back(vel2[0]);
+        pThis->data_field.push_back(vel2[1]);
+        pThis->data_field.push_back(force2[0]);
+        pThis->data_field.push_back(force2[1]);
+
+        pThis->sendPacket();
+
+        usleep(100000);
+        while(!pThis->gripperStatus.transfer_ready){
+            usleep(1000);
+        }
+
+        flag ^= true;
+    }
+}
+
 void MainWindow::btnConnectClicked(){
     if (connectState){
         finish();
@@ -636,7 +710,6 @@ void MainWindow::comm_can_rx_func(void *arg)
 
 void MainWindow::comm_can_tx_func(void *arg)
 {
-    int i;
     CAN_FRAME cfame;
     MainWindow *pThis = static_cast<MainWindow*>(arg);
 
@@ -707,6 +780,15 @@ void MainWindow::btnInitClicked()
 {
     data_field.clear();
     data_field.push_back(CMD_INIT);
+    data_field.push_back(0);
+
+    sendPacket();
+}
+
+void MainWindow::btnOrgClicked()
+{
+    data_field.clear();
+    data_field.push_back(CMD_ORG);
     data_field.push_back(0);
 
     sendPacket();
@@ -788,6 +870,46 @@ void MainWindow::btnLoggingStartClicked()
 void MainWindow::btnTransmitClicked()
 {
     moveGripper();
+}
+
+void MainWindow::btnRepeatOperatingClicked()
+{
+    repeat_position1 = ui->txtRepeatPosition1->text().toUInt();
+    repeat_position2 = ui->txtRepeatPosition2->text().toUInt();
+    repeat_count = (char)ui->txtRepeatCount->text().toShort();
+
+    pthread_create(&repeat_thread, NULL, repeat_func, this);
+}
+
+void MainWindow::btnDIOSetClicked()
+{
+    dio_number = (unsigned char)ui->txtDIONum->text().toUInt();
+    dio_position = ui->txtDIOPosition->text().toUInt();
+    dio_force = ui->txtDIOForce->text().toUInt();
+    dio_velocity = ui->txtDIOVelocity->text().toUInt();
+
+    data_field.clear();
+    data_field.push_back(CMD_DIO);
+    data_field.push_back(7);
+
+    uint8_t pos[2], vel[2], force[2];
+
+    pos[0] = (uint8_t)(dio_position >> 8);
+    pos[1] = (uint8_t)dio_position;
+    force[0] = (uint8_t)(dio_force >> 8);
+    force[1] = (uint8_t)dio_force;
+    vel[0] = (uint8_t)(dio_velocity >> 8);
+    vel[1] = (uint8_t)dio_velocity;
+
+    data_field.push_back(dio_number);
+    data_field.push_back(pos[0]);
+    data_field.push_back(pos[1]);
+    data_field.push_back(force[0]);
+    data_field.push_back(force[1]);
+    data_field.push_back(vel[0]);
+    data_field.push_back(vel[1]);
+
+    sendPacket();
 }
 
 //void MainWindow::btnConnectFingerClicked()
@@ -1113,6 +1235,8 @@ void MainWindow::enableComponent(bool enable)
     ui->gbOperating2->setEnabled(enable);
     ui->gbStatus->setEnabled(enable);
     ui->gbDataVisualization->setEnabled(enable);
+    ui->gbRepeatOperating->setEnabled(enable);
+    ui->gbDIO->setEnabled(enable);
 }
 
 void MainWindow::initGUI()
@@ -1123,6 +1247,8 @@ void MainWindow::initGUI()
     ui->gbOperating2->setEnabled(false);
     ui->gbStatus->setEnabled(false);
     ui->gbDataVisualization->setEnabled(false);
+    ui->gbRepeatOperating->setEnabled(false);
+    ui->gbDIO->setEnabled(false);
 
     ui->frameForceOption->hide();
     ui->cbOpPositionMode->setChecked(true);

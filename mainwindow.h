@@ -29,12 +29,17 @@ using namespace std;
 
 #include <pthread.h>
 
+#if defined(__linux__)
+#elif #elif defined(_WIN32) || defined(_WIN64)
+#endif
+
 namespace Ui { class MainWindow; }
 
 const uint8_t RX_SOP = 0xFA;
 const uint8_t TX_SOP = 0xFB;
 const uint8_t EOP = 0xFE;
 
+const uint8_t CMD_ORG = 0xC0;
 const uint8_t CMD_PING = 0xC1;
 const uint8_t CMD_INIT = 0xC2;
 const uint8_t CMD_FEEDBACK = 0xC3;
@@ -48,6 +53,7 @@ const uint8_t CMD_M2_FORCE_LIMIT = 0xCA;
 const uint8_t CMD_MOVE = 0xCB;
 const uint8_t CMD_LOGGING = 0xCC;
 const uint8_t CMD_DATA_TRANSFER = 0xCD;
+const uint8_t CMD_DIO = 0xCE;
 
 const uint16_t STATUS_MOTOR_ON = 0x8000;
 const uint16_t STATUS_INIT_COMPLETE = 0x4000;
@@ -104,6 +110,7 @@ public slots:
     void btnConnectClicked();
     void btnPingClicked();
     void btnInitClicked();
+    void btnOrgClicked();
     void btnFeedbackOnClicked();
     void btnFeedbackOffClicked();
     void btnPneumaticOnClicked();
@@ -116,6 +123,8 @@ public slots:
 //    void btnGripFingerClicked();
 //    void btnReleaseFingerClicked();
 //    void btnStopFingerClicked();
+    void btnRepeatOperatingClicked();
+    void btnDIOSetClicked();
 
     // radio button event
     void rbRS485Clicked(bool arg);
@@ -171,9 +180,16 @@ private:
     std::string msgString, loggingString;
     bool logging_flag;
     Logger *logger;
+    int repeat_position1, repeat_position2;
+    char repeat_count;
+    char dio_number;
+    int dio_position, dio_force, dio_velocity;
+    pthread_t repeat_thread;
+
 
     static void* update_func(void *arg);
     static void* logging_func(void *arg);
+    static void* repeat_func(void *arg);
     static void comm_485_rx_func(void *arg);
     static void comm_485_tx_func(void *arg);
     static void comm_can_rx_func(void *arg);
